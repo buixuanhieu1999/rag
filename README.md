@@ -8,7 +8,7 @@ The project has three entrypoints:
 - `streamlit_app.py`: optional local/admin UI
 - `scripts/`: CLI tools for export and ingestion
 
-Core RAG logic stays in `rag_app`, so the API, Streamlit UI, and CLI reuse the same Chroma, BM25, reranker, and answer workflow.
+Core RAG logic stays in `rag_app`, so the API, Streamlit UI, and CLI reuse the same Chroma, BM25, and answer workflow.
 
 ## Features
 
@@ -17,7 +17,7 @@ Core RAG logic stays in `rag_app`, so the API, Streamlit UI, and CLI reuse the s
 - Chunks articles for retrieval
 - Stores embeddings in persistent ChromaDB
 - Supports semantic search, BM25, hybrid RRF, MMR, HyDE, decomposition, and auto routing
-- Uses Ollama for embeddings, reranking, routing, and answer generation
+- Uses Ollama for embeddings, routing, and answer generation
 - Exposes FastAPI endpoints with Swagger UI
 - Runs background ingestion jobs with `job_id` status tracking
 - Logs request method, path, status code, duration, and request ID
@@ -50,7 +50,6 @@ Start Ollama, then pull the local models:
 ollama pull qwen3:4b-instruct
 ollama pull embeddinggemma
 ollama pull qwen3:1.7b
-ollama pull qllama/bge-reranker-v2-m3
 ```
 
 Default `.env` model settings:
@@ -62,7 +61,6 @@ RAG_LOCAL_OLLAMA_HOST=http://localhost:11434
 RAG_EMBEDDING_PROVIDER=ollama
 RAG_EMBEDDING_MODEL=embeddinggemma:latest
 RAG_ROUTER_MODEL=qwen3:1.7b
-RAG_RERANKER_MODEL=qllama/bge-reranker-v2-m3:latest
 ```
 
 ## Run With Docker Compose
@@ -194,7 +192,7 @@ Response:
 ```json
 {
   "answer": "...",
-  "mode": "BM25 + Ollama Reranker",
+  "mode": "BM25",
   "sources": [
     {
       "id": "KNOW-1::0",
