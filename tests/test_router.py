@@ -15,24 +15,24 @@ def test_router_signals_detect_oms_form_codes():
     assert signals["module_count"] == 0
 
 
-def test_router_routes_exact_technical_queries_to_bm25_reranker():
+def test_router_routes_exact_technical_queries_to_bm25():
     mode, reason = route_by_rules('Man hinh D03F1000 tab "Thiet lap ma chung tu" bi loi gi?')
 
-    assert mode == "BM25 + Ollama Reranker"
+    assert mode == "BM25"
     assert "exact technical" in reason
 
 
-def test_router_routes_exact_knowledge_id_to_bm25_reranker():
+def test_router_routes_exact_knowledge_id_to_bm25():
     mode, reason = route_by_rules("knowledge 51493")
 
-    assert mode == "BM25 + Ollama Reranker"
+    assert mode == "BM25"
     assert "knowledge id" in reason
 
 
-def test_router_routes_exact_w_form_to_bm25_reranker():
+def test_router_routes_exact_w_form_to_bm25():
     mode, reason = route_by_rules("W89F1000 bao cao tai LW6 HR portal")
 
-    assert mode == "BM25 + Ollama Reranker"
+    assert mode == "BM25"
     assert "exact technical" in reason
 
 

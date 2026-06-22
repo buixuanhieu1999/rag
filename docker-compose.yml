@@ -71,13 +71,11 @@ x-ollama-pull-base: &ollama-pull-base
       ollama pull "$${OLLAMA_MODEL}"
       ollama pull "$${RAG_EMBEDDING_MODEL}"
       ollama pull "$${RAG_ROUTER_MODEL}"
-      ollama pull "$${RAG_RERANKER_MODEL}"
   command: []
   environment: &ollama-pull-env
     OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3:4b-instruct}
     RAG_EMBEDDING_MODEL: ${RAG_EMBEDDING_MODEL:-embeddinggemma:latest}
     RAG_ROUTER_MODEL: ${RAG_ROUTER_MODEL:-qwen3:1.7b}
-    RAG_RERANKER_MODEL: ${RAG_RERANKER_MODEL:-qllama/bge-reranker-v2-m3:latest}
 
 services:
   api:

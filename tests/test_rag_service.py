@@ -41,14 +41,6 @@ class FakeBM25Index:
         return cls()
 
 
-class FakeReranker:
-    instances = []
-
-    def __init__(self, **kwargs):
-        self.kwargs = kwargs
-        FakeReranker.instances.append(self)
-
-
 def test_rag_service_reuses_store_and_builds_bm25(monkeypatch):
     FakeStore.instances.clear()
     FakeBM25Index.built_from.clear()
@@ -115,10 +107,8 @@ def test_rag_service_ingest_uses_shared_workflow_and_refreshes_cache(monkeypatch
 def test_rag_service_answer_delegates_to_answer_question(monkeypatch):
     FakeStore.instances.clear()
     FakeBM25Index.built_from.clear()
-    FakeReranker.instances.clear()
     monkeypatch.setattr(service_module, "ChromaKnowledgeStore", FakeStore)
     monkeypatch.setattr(service_module, "BM25Index", FakeBM25Index)
-    monkeypatch.setattr(service_module, "OllamaEmbeddingReranker", FakeReranker)
 
     captured = {}
 
@@ -138,7 +128,6 @@ def test_rag_service_answer_delegates_to_answer_question(monkeypatch):
     assert response.answer == "answer"
     assert captured["store"] is service.store
     assert captured["bm25"] is service.bm25
-    assert captured["reranker"] is service.reranker
     assert captured["question"] == "question"
     assert captured["mode"] == "Semantic"
     assert captured["k"] == 3

@@ -50,7 +50,6 @@ Khởi động Ollama, sau đó kéo các model cục bộ:
 ollama pull qwen3:4b-instruct
 ollama pull embeddinggemma
 ollama pull qwen3:1.7b
-ollama pull qllama/bge-reranker-v2-m3
 ```
 
 Cấu hình model mặc định trong `.env`:
@@ -62,7 +61,6 @@ RAG_LOCAL_OLLAMA_HOST=http://localhost:11434
 RAG_EMBEDDING_PROVIDER=ollama
 RAG_EMBEDDING_MODEL=embeddinggemma:latest
 RAG_ROUTER_MODEL=qwen3:1.7b
-RAG_RERANKER_MODEL=qllama/bge-reranker-v2-m3:latest
 ```
 
 ## Chạy bằng Docker Compose
@@ -194,7 +192,7 @@ Response:
 ```json
 {
   "answer": "...",
-  "mode": "BM25 + Ollama Reranker",
+  "mode": "BM25",
   "sources": [
     {
       "id": "KNOW-1::0",
