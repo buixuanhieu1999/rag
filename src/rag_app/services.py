@@ -6,8 +6,8 @@ from typing import Any, Callable
 
 from .config import AppConfig
 from .data_loader import chunk_documents, load_knowledge_export_documents
-from .models import RagResponse
-from .rag import answer_question
+from .models import RagResponse, RagStreamResponse
+from .rag import answer_question, stream_answer_question
 from .retrievers import BM25Index
 from .vector_store import ChromaKnowledgeStore
 
@@ -132,6 +132,27 @@ class RagService:
     ) -> RagResponse:
         with self._lock:
             return answer_question(
+                config=self.config,
+                store=self.store,
+                bm25=self.bm25,
+                question=question,
+                mode=mode,
+                k=top_k,
+                fetch_k=fetch_k,
+                lambda_mult=mmr_lambda,
+            )
+
+    def answer_stream(
+        self,
+        *,
+        question: str,
+        mode: str = "Auto Router",
+        top_k: int = 5,
+        fetch_k: int = 20,
+        mmr_lambda: float = 0.5,
+    ) -> RagStreamResponse:
+        with self._lock:
+            return stream_answer_question(
                 config=self.config,
                 store=self.store,
                 bm25=self.bm25,

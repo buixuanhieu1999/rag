@@ -59,7 +59,7 @@ with st.sidebar:
     st.subheader("Ollama")
     ollama_host = st.text_input("Answer model host", value=base_config.ollama_host)
     ollama_model = st.text_input("Answer model", value=base_config.ollama_model)
-    local_ollama_host = st.text_input("Local embedding host", value=base_config.local_ollama_host)
+    local_ollama_host = st.text_input("Local embedding/router host", value=base_config.local_ollama_host)
     router_model = st.text_input("Local router", value=base_config.router_model)
 
     st.subheader("Retrieval")
@@ -125,8 +125,8 @@ if ask:
         st.warning("Build the Chroma index first.")
     else:
         try:
-            with st.spinner("Retrieving and asking Ollama..."):
-                response = service.answer(
+            with st.spinner("Retrieving context..."):
+                response = service.answer_stream(
                     question=question.strip(),
                     mode=mode,
                     top_k=top_k,
@@ -134,7 +134,7 @@ if ask:
                     mmr_lambda=mmr_lambda,
                 )
             st.subheader("Answer")
-            st.write(response.answer)
+            st.write_stream(response.chunks)
 
             if response.diagnostics:
                 with st.expander("Query transform"):

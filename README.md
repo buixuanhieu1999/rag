@@ -8,7 +8,7 @@ Dự án có ba điểm chạy chính:
 - `streamlit_app.py`: giao diện cục bộ/quản trị tùy chọn
 - `scripts/`: công cụ CLI để xuất và nạp dữ liệu
 
-Phần logic RAG lõi nằm trong `rag_app`, vì vậy API, giao diện Streamlit và CLI đều dùng chung Chroma, BM25, reranker và luồng tạo câu trả lời.
+Phần logic RAG lõi nằm trong `rag_app`, vì vậy API, giao diện Streamlit và CLI đều dùng chung Chroma, BM25, router và luồng tạo câu trả lời.
 
 ## Tính năng
 
@@ -17,7 +17,7 @@ Phần logic RAG lõi nằm trong `rag_app`, vì vậy API, giao diện Streamli
 - Chia nhỏ bài viết để truy xuất
 - Lưu embedding vào ChromaDB bền vững
 - Hỗ trợ semantic search, BM25, hybrid RRF, MMR, HyDE, decomposition và tự định tuyến
-- Dùng Ollama cho embedding, reranking, routing và sinh câu trả lời
+- Dùng Ollama cho embedding, routing và sinh câu trả lời
 - Cung cấp các endpoint FastAPI kèm Swagger UI
 - Chạy các tác vụ nạp dữ liệu nền với trạng thái `job_id`
 - Ghi log phương thức request, path, mã trạng thái, thời lượng và request ID
@@ -65,8 +65,8 @@ RAG_ROUTER_MODEL=qwen3:1.7b
 
 ## Chạy bằng Docker Compose
 
-Docker Compose có thể chạy API với Ollama CPU hoặc Ollama NVIDIA GPU.
-Chỉ dùng một profile tại một thời điểm vì cả hai profile đều dùng cùng các cổng local.
+Docker Compose có thể chạy API với Ollama CPU, GPU 0, GPU 1 hoặc cả hai GPU.
+Mỗi profile dùng cổng và thư mục dữ liệu riêng.
 
 CPU:
 
@@ -77,6 +77,10 @@ docker compose --profile cpu up -d --build
 NVIDIA GPU:
 
 ```powershell
+docker compose --profile gpu0 up -d --build
+docker compose --profile gpu1 up -d --build
+
+# Chạy cả GPU 0 và GPU 1:
 docker compose --profile gpu up -d --build
 ```
 
@@ -86,9 +90,9 @@ hoặc hỗ trợ GPU của Docker Desktop.
 Compose khởi động:
 
 ```text
-api / api-gpu                 FastAPI RAG service on port 8000
-ollama / ollama-gpu           local Ollama server on port 11434
-ollama-pull / ollama-pull-gpu one-shot model pull helper
+api-cpu / ollama-cpu / ollama-pull-cpu           ports 8000 / 11434
+api-gpu-0 / ollama-gpu-0 / ollama-pull-gpu-0     ports 8001 / 11435
+api-gpu-1 / ollama-gpu-1 / ollama-pull-gpu-1     ports 8002 / 11436
 ```
 
 Mở:
@@ -101,18 +105,21 @@ Health:     http://127.0.0.1:8000/health
 Xem log:
 
 ```powershell
-docker compose logs -f api
-docker compose logs -f ollama-pull
-docker compose logs -f api-gpu
-docker compose logs -f ollama-pull-gpu
+docker compose logs -f api-cpu
+docker compose logs -f ollama-pull-cpu
+docker compose logs -f api-gpu-0
+docker compose logs -f ollama-pull-gpu-0
+docker compose logs -f api-gpu-1
+docker compose logs -f ollama-pull-gpu-1
 ```
 
 Chạy nạp dữ liệu bên trong container API:
 
 ```powershell
-docker compose run --rm api python scripts/ingest.py --reset
+docker compose run --rm api-cpu python scripts/ingest.py --reset
 # hoặc với profile GPU:
-docker compose run --rm api-gpu python scripts/ingest.py --reset
+docker compose run --rm api-gpu-0 python scripts/ingest.py --reset
+docker compose run --rm api-gpu-1 python scripts/ingest.py --reset
 ```
 
 Dừng container:

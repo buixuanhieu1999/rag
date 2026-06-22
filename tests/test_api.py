@@ -11,13 +11,14 @@ from rag_api.main import create_app
 from rag_api.middleware.request_id import RequestIDMiddleware
 from rag_api.middleware.request_logging import RequestLoggingMiddleware
 from rag_api.services.job_service import JobService
-from rag_app.models import RagResponse, RetrievedDocument
+from rag_app.models import RagResponse, RagStreamResponse, RetrievedDocument
 from rag_app.services import IngestResult
 
 
 class FakeRagService:
     def __init__(self) -> None:
         self.answer_calls = []
+        self.answer_stream_calls = []
         self.ingest_calls = []
 
     def count(self) -> int:
@@ -27,6 +28,22 @@ class FakeRagService:
         self.answer_calls.append(kwargs)
         return RagResponse(
             answer="Renew the license file.",
+            mode=kwargs["mode"],
+            diagnostics={"test": True},
+            sources=[
+                RetrievedDocument(
+                    id="KNOW-1::0",
+                    text="Knowledge text preview",
+                    metadata={"title": "License error", "knowledge_id": 1},
+                    score=0.91,
+                )
+            ],
+        )
+
+    def answer_stream(self, **kwargs):
+        self.answer_stream_calls.append(kwargs)
+        return RagStreamResponse(
+            chunks=iter(["Renew ", "the license file."]),
             mode=kwargs["mode"],
             diagnostics={"test": True},
             sources=[
@@ -79,6 +96,28 @@ def test_chat_endpoint_returns_answer_and_sources():
     assert body["sources"][0]["id"] == "KNOW-1::0"
     assert body["sources"][0]["title"] == "License error"
     assert service.answer_calls[0]["fetch_k"] == 3
+
+
+def test_chat_stream_endpoint_returns_sse_events():
+    app = create_app()
+    service = FakeRagService()
+    app.dependency_overrides[get_rag_service] = lambda: service
+    client = TestClient(app)
+
+    response = client.post(
+        "/v1/chat/stream",
+        json={"question": "How to fix license?", "mode": "Semantic", "top_k": 3, "fetch_k": 2},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    body = response.text
+    assert "event: metadata" in body
+    assert "event: token" in body
+    assert '"token": "Renew "' in body
+    assert "event: done" in body
+    assert '"answer": "Renew the license file."' in body
+    assert service.answer_stream_calls[0]["fetch_k"] == 3
 
 
 def test_ingest_endpoint_returns_job_id_and_status():

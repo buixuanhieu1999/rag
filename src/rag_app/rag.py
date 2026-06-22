@@ -6,8 +6,8 @@ import unicodedata
 from typing import Any
 
 from .config import AppConfig
-from .models import RagResponse, RetrievedDocument
-from .ollama_client import chat
+from .models import PreparedRagRequest, RagResponse, RagStreamResponse, RetrievedDocument
+from .ollama_client import chat, chat_stream
 from .retrievers import (
     BM25Index,
     bm25_search,
@@ -107,6 +107,11 @@ A: {{"mode":"HyDE","reason":"conceptual low-overlap search"}}
 Detected query signals: {signals}
 
 Question: {question}"""
+
+NO_CONTEXT_ANSWER = (
+    "Kh\u00f4ng c\u00f3 th\u00f4ng tin trong c\u01a1 s\u1edf tri th\u1ee9c "
+    "\u0111\u00e3 l\u1eadp ch\u1ec9 m\u1ee5c."
+)
 
 
 ALLOWED_ROUTER_MODES = {
@@ -470,7 +475,7 @@ def retrieve_documents(
         return merge_exact_matches(exact_docs, semantic_search(store, question, k=k))[:k], diagnostics
 
     if mode_key == "bm25":
-        diagnostics["first_stage"] = "BM25Okapi"
+        diagnostics["retriever"] = "BM25Okapi"
         return merge_exact_matches(exact_docs, bm25_search(bm25, question, k=k))[:k], diagnostics
 
     if mode_key == "mmr":
@@ -528,7 +533,7 @@ def retrieve_documents(
     )
 
 
-def answer_question(
+def prepare_answer_request(
     config: AppConfig,
     store: ChromaKnowledgeStore,
     bm25: BM25Index,
@@ -537,7 +542,7 @@ def answer_question(
     k: int = 5,
     fetch_k: int = 20,
     lambda_mult: float = 0.5,
-) -> RagResponse:
+) -> PreparedRagRequest:
     router_diagnostics: dict[str, Any] = {}
     if mode.lower() in {"auto", "auto router", "router"}:
         selected_mode, reason = choose_retrieval_mode(config, question)
@@ -563,24 +568,91 @@ def answer_question(
 
     context = format_context(documents)
     if not context:
-        return RagResponse(
-            answer="Không có thông tin trong cơ sở tri thức đã lập chỉ mục.",
+        return PreparedRagRequest(
+            messages=[],
             sources=[],
             mode=mode,
             diagnostics=diagnostics,
+            fallback_answer=NO_CONTEXT_ANSWER,
         )
 
     prompt = ANSWER_TEMPLATE.format(context=context, question=question)
-    answer = chat(
-        config,
-        [
+    return PreparedRagRequest(
+        messages=[
             {"role": "system", "content": ANSWER_SYSTEM_PROMPT},
             {"role": "user", "content": prompt},
         ],
-    )
-    return RagResponse(
-        answer=parse_focused_answer(answer),
         sources=documents,
         mode=mode,
         diagnostics=diagnostics,
+    )
+
+
+def answer_question(
+    config: AppConfig,
+    store: ChromaKnowledgeStore,
+    bm25: BM25Index,
+    question: str,
+    mode: str = "BM25",
+    k: int = 5,
+    fetch_k: int = 20,
+    lambda_mult: float = 0.5,
+) -> RagResponse:
+    prepared = prepare_answer_request(
+        config=config,
+        store=store,
+        bm25=bm25,
+        question=question,
+        mode=mode,
+        k=k,
+        fetch_k=fetch_k,
+        lambda_mult=lambda_mult,
+    )
+    if prepared.fallback_answer is not None:
+        return RagResponse(
+            answer=prepared.fallback_answer,
+            sources=prepared.sources,
+            mode=prepared.mode,
+            diagnostics=prepared.diagnostics,
+        )
+
+    answer = chat(config, prepared.messages)
+    return RagResponse(
+        answer=parse_focused_answer(answer),
+        sources=prepared.sources,
+        mode=prepared.mode,
+        diagnostics=prepared.diagnostics,
+    )
+
+
+def stream_answer_question(
+    config: AppConfig,
+    store: ChromaKnowledgeStore,
+    bm25: BM25Index,
+    question: str,
+    mode: str = "BM25",
+    k: int = 5,
+    fetch_k: int = 20,
+    lambda_mult: float = 0.5,
+) -> RagStreamResponse:
+    prepared = prepare_answer_request(
+        config=config,
+        store=store,
+        bm25=bm25,
+        question=question,
+        mode=mode,
+        k=k,
+        fetch_k=fetch_k,
+        lambda_mult=lambda_mult,
+    )
+    chunks = (
+        [prepared.fallback_answer]
+        if prepared.fallback_answer is not None
+        else chat_stream(config, prepared.messages)
+    )
+    return RagStreamResponse(
+        chunks=chunks,
+        sources=prepared.sources,
+        mode=prepared.mode,
+        diagnostics=prepared.diagnostics,
     )
