@@ -1,28 +1,28 @@
 # OMS Knowledge RAG
 
-Local RAG service for OMS knowledge-export data.
+Dịch vụ RAG cục bộ cho dữ liệu xuất từ OMS knowledge.
 
-The project has three entrypoints:
+Dự án có ba điểm chạy chính:
 
-- `rag_api`: FastAPI backend for JS apps and API clients
-- `streamlit_app.py`: optional local/admin UI
-- `scripts/`: CLI tools for export and ingestion
+- `rag_api`: backend FastAPI cho ứng dụng JS và các client gọi API
+- `streamlit_app.py`: giao diện cục bộ/quản trị tùy chọn
+- `scripts/`: công cụ CLI để xuất và nạp dữ liệu
 
-Core RAG logic stays in `rag_app`, so the API, Streamlit UI, and CLI reuse the same Chroma, BM25, and answer workflow.
+Phần logic RAG lõi nằm trong `rag_app`, vì vậy API, giao diện Streamlit và CLI đều dùng chung Chroma, BM25, reranker và luồng tạo câu trả lời.
 
-## Features
+## Tính năng
 
-- Pulls OMS knowledge articles from the knowledge-export API
-- Cleans HTML/article content into readable text
-- Chunks articles for retrieval
-- Stores embeddings in persistent ChromaDB
-- Supports semantic search, BM25, hybrid RRF, MMR, HyDE, decomposition, and auto routing
-- Uses Ollama for embeddings, routing, and answer generation
-- Exposes FastAPI endpoints with Swagger UI
-- Runs background ingestion jobs with `job_id` status tracking
-- Logs request method, path, status code, duration, and request ID
+- Lấy bài viết tri thức OMS từ API knowledge-export
+- Làm sạch nội dung HTML/bài viết thành văn bản dễ đọc
+- Chia nhỏ bài viết để truy xuất
+- Lưu embedding vào ChromaDB bền vững
+- Hỗ trợ semantic search, BM25, hybrid RRF, MMR, HyDE, decomposition và tự định tuyến
+- Dùng Ollama cho embedding, reranking, routing và sinh câu trả lời
+- Cung cấp các endpoint FastAPI kèm Swagger UI
+- Chạy các tác vụ nạp dữ liệu nền với trạng thái `job_id`
+- Ghi log phương thức request, path, mã trạng thái, thời lượng và request ID
 
-## Setup
+## Thiết lập
 
 ```powershell
 cd C:\Users\AD\Downloads\RAG
@@ -30,13 +30,13 @@ uv sync
 copy .env.example .env
 ```
 
-Set the OMS API token in `.env`:
+Thiết lập token OMS API trong `.env`:
 
 ```env
 RAG_KNOWLEDGE_EXPORT_TOKEN=your_knowledge_export_token
 ```
 
-The OMS token is used only for pulling source data from:
+Token OMS chỉ được dùng để lấy dữ liệu nguồn từ:
 
 ```text
 https://oms.diginet.com.vn/api-dev/v8.0.0/ai/knowledge-export
@@ -44,7 +44,7 @@ https://oms.diginet.com.vn/api-dev/v8.0.0/ai/knowledge-export
 
 ## Ollama Models
 
-Start Ollama, then pull the local models:
+Khởi động Ollama, sau đó kéo các model cục bộ:
 
 ```powershell
 ollama pull qwen3:4b-instruct
@@ -52,7 +52,7 @@ ollama pull embeddinggemma
 ollama pull qwen3:1.7b
 ```
 
-Default `.env` model settings:
+Cấu hình model mặc định trong `.env`:
 
 ```env
 OLLAMA_HOST=http://localhost:11434
@@ -63,10 +63,10 @@ RAG_EMBEDDING_MODEL=embeddinggemma:latest
 RAG_ROUTER_MODEL=qwen3:1.7b
 ```
 
-## Run With Docker Compose
+## Chạy bằng Docker Compose
 
-Docker Compose can run the API with either CPU Ollama or NVIDIA GPU Ollama.
-Use one profile at a time because both profiles publish the same local ports.
+Docker Compose có thể chạy API với Ollama CPU hoặc Ollama NVIDIA GPU.
+Chỉ dùng một profile tại một thời điểm vì cả hai profile đều dùng cùng các cổng local.
 
 CPU:
 
@@ -80,10 +80,10 @@ NVIDIA GPU:
 docker compose --profile gpu up -d --build
 ```
 
-The GPU profile requires a working NVIDIA driver plus NVIDIA Container Toolkit
-or Docker Desktop GPU support.
+Profile GPU yêu cầu driver NVIDIA hoạt động cùng NVIDIA Container Toolkit
+hoặc hỗ trợ GPU của Docker Desktop.
 
-Compose starts:
+Compose khởi động:
 
 ```text
 api / api-gpu                 FastAPI RAG service on port 8000
@@ -91,14 +91,14 @@ ollama / ollama-gpu           local Ollama server on port 11434
 ollama-pull / ollama-pull-gpu one-shot model pull helper
 ```
 
-Open:
+Mở:
 
 ```text
 Swagger UI: http://127.0.0.1:8000/docs
 Health:     http://127.0.0.1:8000/health
 ```
 
-Watch logs:
+Xem log:
 
 ```powershell
 docker compose logs -f api
@@ -107,45 +107,45 @@ docker compose logs -f api-gpu
 docker compose logs -f ollama-pull-gpu
 ```
 
-Run ingestion inside the API container:
+Chạy nạp dữ liệu bên trong container API:
 
 ```powershell
 docker compose run --rm api python scripts/ingest.py --reset
-# or, with the GPU profile:
+# hoặc với profile GPU:
 docker compose run --rm api-gpu python scripts/ingest.py --reset
 ```
 
-Stop containers:
+Dừng container:
 
 ```powershell
 docker compose down
 ```
 
-Persisted Docker data:
+Dữ liệu Docker được lưu lại:
 
 ```text
-./docker-data/chroma  ChromaDB data
-./docker-data/ollama  Ollama models
-./logs                app logs
-./exports             exported JSON files
+./docker-data/chroma  Dữ liệu ChromaDB
+./docker-data/ollama  Model Ollama
+./logs                log ứng dụng
+./exports             file JSON đã xuất
 ```
 
-Rebuilding the image does not delete Chroma data or Ollama models because those folders are mounted from the host.
+Việc rebuild image không xóa dữ liệu Chroma hay model Ollama vì các thư mục này được mount từ máy chủ.
 
-## Run FastAPI
+## Chạy FastAPI
 
 ```powershell
 uv run uvicorn rag_api.main:app --host 127.0.0.1 --port 8000
 ```
 
-Open:
+Mở:
 
 ```text
 Swagger UI: http://127.0.0.1:8000/docs
 Health:     http://127.0.0.1:8000/health
 ```
 
-FastAPI is the recommended integration layer for another JS app.
+FastAPI là lớp tích hợp được khuyến nghị cho ứng dụng JS khác.
 
 ## API Endpoints
 
@@ -155,7 +155,7 @@ FastAPI is the recommended integration layer for another JS app.
 GET /health
 ```
 
-Example response:
+Ví dụ response:
 
 ```json
 {
@@ -238,7 +238,7 @@ Response:
 GET /v1/ingest/{job_id}
 ```
 
-Example:
+Ví dụ:
 
 ```http
 GET /v1/ingest/8c2a1f3e-3ef9-4d1c-9c5e-91df91df6721
@@ -258,7 +258,7 @@ Response:
 }
 ```
 
-## JS App Example
+## Ví dụ cho JS App
 
 ```js
 const response = await fetch("http://127.0.0.1:8000/v1/chat", {
@@ -278,57 +278,57 @@ const data = await response.json();
 console.log(data.answer);
 ```
 
-This version has no API auth. Keep it on localhost or behind a trusted internal gateway before exposing it to other machines.
+Phiên bản này không có xác thực API. Chỉ nên chạy trên localhost hoặc sau một gateway nội bộ đáng tin cậy trước khi mở cho máy khác.
 
-## Export Clean Raw JSON
+## Xuất JSON gốc đã làm sạch
 
-Small sample:
+Mẫu nhỏ:
 
 ```powershell
 uv run python scripts\export_knowledge.py --knowledge-limit 5 --knowledge-max-pages 1
 ```
 
-Full export:
+Xuất toàn bộ:
 
 ```powershell
 uv run python scripts\export_knowledge.py --all --knowledge-limit 30 --output exports\knowledge_export_all.json --log-file logs\export_knowledge.log
 ```
 
-The export script writes cleaned JSON only. It does not embed, index, or touch Chroma.
+Script export chỉ ghi JSON đã làm sạch. Nó không embed, không index, và không tác động đến Chroma.
 
-## Build Or Refresh Chroma
+## Tạo lại Chroma hoặc làm mới
 
-Small test ingestion:
+Nạp dữ liệu thử nhỏ:
 
 ```powershell
 uv run python scripts\ingest.py --knowledge-limit 5 --knowledge-max-pages 1 --collection-name knowledge_export_test --chroma-dir .chroma_knowledge_test --reset
 ```
 
-Full ingestion:
+Nạp dữ liệu đầy đủ:
 
 ```powershell
 uv run python scripts\ingest.py --knowledge-limit 30 --reset --log-file logs\ingest.log
 ```
 
-Without `--reset`, ingest uses Chroma `upsert`:
+Không dùng `--reset`, ingest sẽ dùng Chroma `upsert`:
 
 ```text
-New article IDs are added.
-Existing article chunk IDs are updated.
-Removed API articles may remain in Chroma.
+ID bài viết mới sẽ được thêm vào.
+Chunk ID của bài viết hiện có sẽ được cập nhật.
+Bài viết đã bị xóa khỏi API vẫn có thể còn trong Chroma.
 ```
 
-Use `--reset` when you want Chroma to mirror the current API data cleanly.
+Dùng `--reset` khi muốn Chroma phản ánh dữ liệu API hiện tại một cách sạch sẽ.
 
-## Run Streamlit Admin UI
+## Chạy Streamlit Admin UI
 
 ```powershell
 uv run streamlit run streamlit_app.py
 ```
 
-Streamlit is useful for local testing and manual indexing, but JS apps should call FastAPI instead.
+Streamlit hữu ích cho kiểm thử cục bộ và index thủ công, nhưng ứng dụng JS nên gọi FastAPI thay vì dùng trực tiếp.
 
-## Project Structure
+## Cấu trúc dự án
 
 ```text
 src/
@@ -358,18 +358,18 @@ scripts/
 tests/
 ```
 
-Important split:
+Phân tách quan trọng:
 
 ```text
-rag_app = reusable RAG engine
-rag_api = HTTP/API wrapper
-scripts = CLI operations
-Streamlit = optional local UI
+rag_app = engine RAG có thể tái sử dụng
+rag_api = lớp bọc HTTP/API
+scripts = thao tác CLI
+Streamlit = giao diện cục bộ tùy chọn
 ```
 
-## Configuration
+## Cấu hình
 
-Common `.env` values:
+Các giá trị phổ biến trong `.env`:
 
 ```env
 RAG_CHROMA_DIR=.chroma
@@ -386,15 +386,15 @@ RAG_TOP_K=5
 RAG_FETCH_K=20
 ```
 
-Changing embedding provider/model usually requires rebuilding Chroma with `--reset`.
+Khi thay đổi embedding provider/model, thường cần build lại Chroma với `--reset`.
 
-## Test
+## Kiểm thử
 
 ```powershell
 uv run pytest
 ```
 
-Compile check:
+Kiểm tra biên dịch:
 
 ```powershell
 uv run python -m compileall src scripts tests streamlit_app.py
