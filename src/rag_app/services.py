@@ -6,9 +6,9 @@ from typing import Any, Callable
 
 from .config import AppConfig
 from .data_loader import chunk_documents, load_knowledge_export_documents
-from .models import RagResponse
-from .rag import answer_question
-from .retrievers import BM25Index, OllamaEmbeddingReranker
+from .models import RagResponse, RagStreamResponse
+from .rag import answer_question, stream_answer_question
+from .retrievers import BM25Index
 from .vector_store import ChromaKnowledgeStore
 
 
@@ -29,7 +29,6 @@ class RagService:
         self.config = config
         self._store: ChromaKnowledgeStore | None = None
         self._bm25: BM25Index | None = None
-        self._reranker: OllamaEmbeddingReranker | None = None
         self._lock = RLock()
 
     @property
@@ -65,17 +64,6 @@ class RagService:
             if self._bm25 is None:
                 raise RuntimeError("BM25 cache could not be initialized.")
             return self._bm25
-
-    @property
-    def reranker(self) -> OllamaEmbeddingReranker:
-        with self._lock:
-            if self._reranker is None:
-                self._reranker = OllamaEmbeddingReranker(
-                    host=self.config.local_ollama_host,
-                    model=self.config.reranker_model,
-                    keep_alive=self.config.ollama_keep_alive,
-                )
-            return self._reranker
 
     def count(self) -> int:
         with self._lock:
@@ -147,7 +135,27 @@ class RagService:
                 config=self.config,
                 store=self.store,
                 bm25=self.bm25,
-                reranker=self.reranker,
+                question=question,
+                mode=mode,
+                k=top_k,
+                fetch_k=fetch_k,
+                lambda_mult=mmr_lambda,
+            )
+
+    def answer_stream(
+        self,
+        *,
+        question: str,
+        mode: str = "Auto Router",
+        top_k: int = 5,
+        fetch_k: int = 20,
+        mmr_lambda: float = 0.5,
+    ) -> RagStreamResponse:
+        with self._lock:
+            return stream_answer_question(
+                config=self.config,
+                store=self.store,
+                bm25=self.bm25,
                 question=question,
                 mode=mode,
                 k=top_k,

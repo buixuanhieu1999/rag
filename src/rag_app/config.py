@@ -39,10 +39,6 @@ class AppConfig:
     ollama_api_key: str = os.getenv("OLLAMA_API_KEY", "")
     ollama_keep_alive: str = os.getenv("OLLAMA_KEEP_ALIVE", "10s")
     router_model: str = os.getenv("RAG_ROUTER_MODEL", "qwen3:1.7b")
-    reranker_model: str = os.getenv(
-        "RAG_RERANKER_MODEL",
-        "qllama/bge-reranker-v2-m3:latest",
-    )
 
     chunk_size: int = int(os.getenv("RAG_CHUNK_SIZE", "1024"))
     chunk_overlap: int = int(os.getenv("RAG_CHUNK_OVERLAP", "128"))

@@ -6,12 +6,10 @@ import unicodedata
 from typing import Any
 
 from .config import AppConfig
-from .models import RagResponse, RetrievedDocument
-from .ollama_client import chat
+from .models import PreparedRagRequest, RagResponse, RagStreamResponse, RetrievedDocument
+from .ollama_client import chat, chat_stream
 from .retrievers import (
     BM25Index,
-    OllamaEmbeddingReranker,
-    bm25_ollama_rerank_search,
     bm25_search,
     hybrid_rrf_search,
     mmr_search,
@@ -64,7 +62,7 @@ ROUTER_SYSTEM_PROMPT = """You are a deterministic router for an OMS/LEMON knowle
 Choose exactly one retrieval mode. Output only valid JSON.
 
 Mode priority:
-1. BM25 + Ollama Reranker: explicit knowledge/article IDs, exact module/form codes like D05F1602 or W89F1000, exact screen/report/menu/tab/button names, quoted UI labels, error codes, file paths, SQL/object names, customer/product keywords, or highly specific keywords.
+1. BM25: explicit knowledge/article IDs, exact module/form codes like D05F1602 or W89F1000, exact screen/report/menu/tab/button names, quoted UI labels, error codes, file paths, SQL/object names, customer/product keywords, or highly specific keywords.
 2. Decomposition: the user asks multiple independent questions, compares items, or asks about several forms/modules/aspects at once.
 3. MMR: the user asks for diverse examples, groups, categories, overviews, common cases, or different types of knowledge articles.
 4. Hybrid RRF: both exact keywords and semantic meaning matter. Use this as the safest default when unsure.
@@ -77,7 +75,7 @@ ROUTER_TEMPLATE = """Return JSON:
 {{"mode":"one allowed mode","reason":"short reason"}}
 
 Allowed modes:
-- BM25 + Ollama Reranker
+- BM25
 - Hybrid RRF
 - Semantic
 - MMR
@@ -86,10 +84,10 @@ Allowed modes:
 
 Examples:
 Q: "knowledge 51493"
-A: {{"mode":"BM25 + Ollama Reranker","reason":"knowledge id"}}
+A: {{"mode":"BM25","reason":"knowledge id"}}
 
 Q: "D05F1602 them moi don dat hang ke thua D05F1600 nhu the nao?"
-A: {{"mode":"BM25 + Ollama Reranker","reason":"exact form codes"}}
+A: {{"mode":"BM25","reason":"exact form codes"}}
 
 Q: "Tim cac bai lien quan den phan quyen user tren Web6 nhung khong thay menu"
 A: {{"mode":"Hybrid RRF","reason":"keyword plus semantic intent"}}
@@ -110,9 +108,14 @@ Detected query signals: {signals}
 
 Question: {question}"""
 
+NO_CONTEXT_ANSWER = (
+    "Kh\u00f4ng c\u00f3 th\u00f4ng tin trong c\u01a1 s\u1edf tri th\u1ee9c "
+    "\u0111\u00e3 l\u1eadp ch\u1ec9 m\u1ee5c."
+)
+
 
 ALLOWED_ROUTER_MODES = {
-    "BM25 + Ollama Reranker",
+    "BM25",
     "Hybrid RRF",
     "Semantic",
     "MMR",
@@ -121,11 +124,7 @@ ALLOWED_ROUTER_MODES = {
 }
 
 ROUTER_MODE_ALIASES = {
-    "bm25": "BM25 + Ollama Reranker",
-    "bm25 reranker": "BM25 + Ollama Reranker",
-    "bm25 + reranker": "BM25 + Ollama Reranker",
-    "bm25 + ollama reranker": "BM25 + Ollama Reranker",
-    "reranker": "BM25 + Ollama Reranker",
+    "bm25": "BM25",
     "hybrid": "Hybrid RRF",
     "hybrid rrf": "Hybrid RRF",
     "rrf": "Hybrid RRF",
@@ -330,7 +329,7 @@ def route_by_rules(question: str) -> tuple[str, str] | None:
     normalized = normalize_query(question)
 
     if signals["knowledge_ids"]:
-        return "BM25 + Ollama Reranker", "rule: knowledge id detected"
+        return "BM25", "rule: knowledge id detected"
 
     multi_aspect = signals["aspect_count"] >= 3 and ("," in (question or "") or " va " in normalized)
     comparison = any(term in normalized for term in {"so sanh", "compare", "dong thoi"})
@@ -356,13 +355,13 @@ def route_by_rules(question: str) -> tuple[str, str] | None:
     semantic_count = signals["semantic_count"]
 
     if strong_keyword:
-        return "BM25 + Ollama Reranker", "rule: exact technical keyword"
+        return "BM25", "rule: exact technical keyword"
     if signals["conceptual_count"] >= 2 and technical_count <= 1:
         return "HyDE", "rule: conceptual low-overlap query"
     if technical_count and semantic_count:
         return "Hybrid RRF", "rule: keyword plus semantic intent"
     if technical_count >= 2:
-        return "BM25 + Ollama Reranker", "rule: keyword-heavy query"
+        return "BM25", "rule: keyword-heavy query"
     if semantic_count >= 2 and technical_count == 0:
         return "Semantic", "rule: paraphrased similarity query"
 
@@ -456,7 +455,6 @@ def retrieve_documents(
     config: AppConfig,
     store: ChromaKnowledgeStore,
     bm25: BM25Index,
-    reranker: OllamaEmbeddingReranker | None,
     question: str,
     mode: str,
     k: int,
@@ -473,28 +471,11 @@ def retrieve_documents(
         diagnostics["exact_knowledge_ids"] = exact_knowledge_ids
         diagnostics["exact_knowledge_matches"] = [doc.id for doc in exact_docs]
 
-    if mode_key in {"bm25 + ollama reranker", "bm25 reranker", "reranked bm25"}:
-        if reranker is None:
-            reranker = OllamaEmbeddingReranker(
-                host=config.local_ollama_host,
-                model=config.reranker_model,
-                keep_alive=config.ollama_keep_alive,
-            )
-        diagnostics["first_stage"] = "BM25Okapi"
-        diagnostics["reranker_model"] = reranker.model
-        retrieved = bm25_ollama_rerank_search(
-            bm25,
-            reranker,
-            question,
-            k=k,
-            fetch_k=fetch_k,
-        )
-        return merge_exact_matches(exact_docs, retrieved)[:k], diagnostics
-
     if mode_key == "semantic":
         return merge_exact_matches(exact_docs, semantic_search(store, question, k=k))[:k], diagnostics
 
     if mode_key == "bm25":
+        diagnostics["retriever"] = "BM25Okapi"
         return merge_exact_matches(exact_docs, bm25_search(bm25, question, k=k))[:k], diagnostics
 
     if mode_key == "mmr":
@@ -552,17 +533,16 @@ def retrieve_documents(
     )
 
 
-def answer_question(
+def prepare_answer_request(
     config: AppConfig,
     store: ChromaKnowledgeStore,
     bm25: BM25Index,
     question: str,
-    mode: str = "BM25 + Ollama Reranker",
+    mode: str = "BM25",
     k: int = 5,
     fetch_k: int = 20,
     lambda_mult: float = 0.5,
-    reranker: OllamaEmbeddingReranker | None = None,
-) -> RagResponse:
+) -> PreparedRagRequest:
     router_diagnostics: dict[str, Any] = {}
     if mode.lower() in {"auto", "auto router", "router"}:
         selected_mode, reason = choose_retrieval_mode(config, question)
@@ -577,7 +557,6 @@ def answer_question(
         config=config,
         store=store,
         bm25=bm25,
-        reranker=reranker,
         question=question,
         mode=mode,
         k=k,
@@ -589,24 +568,91 @@ def answer_question(
 
     context = format_context(documents)
     if not context:
-        return RagResponse(
-            answer="Không có thông tin trong cơ sở tri thức đã lập chỉ mục.",
+        return PreparedRagRequest(
+            messages=[],
             sources=[],
             mode=mode,
             diagnostics=diagnostics,
+            fallback_answer=NO_CONTEXT_ANSWER,
         )
 
     prompt = ANSWER_TEMPLATE.format(context=context, question=question)
-    answer = chat(
-        config,
-        [
+    return PreparedRagRequest(
+        messages=[
             {"role": "system", "content": ANSWER_SYSTEM_PROMPT},
             {"role": "user", "content": prompt},
         ],
-    )
-    return RagResponse(
-        answer=parse_focused_answer(answer),
         sources=documents,
         mode=mode,
         diagnostics=diagnostics,
+    )
+
+
+def answer_question(
+    config: AppConfig,
+    store: ChromaKnowledgeStore,
+    bm25: BM25Index,
+    question: str,
+    mode: str = "BM25",
+    k: int = 5,
+    fetch_k: int = 20,
+    lambda_mult: float = 0.5,
+) -> RagResponse:
+    prepared = prepare_answer_request(
+        config=config,
+        store=store,
+        bm25=bm25,
+        question=question,
+        mode=mode,
+        k=k,
+        fetch_k=fetch_k,
+        lambda_mult=lambda_mult,
+    )
+    if prepared.fallback_answer is not None:
+        return RagResponse(
+            answer=prepared.fallback_answer,
+            sources=prepared.sources,
+            mode=prepared.mode,
+            diagnostics=prepared.diagnostics,
+        )
+
+    answer = chat(config, prepared.messages)
+    return RagResponse(
+        answer=parse_focused_answer(answer),
+        sources=prepared.sources,
+        mode=prepared.mode,
+        diagnostics=prepared.diagnostics,
+    )
+
+
+def stream_answer_question(
+    config: AppConfig,
+    store: ChromaKnowledgeStore,
+    bm25: BM25Index,
+    question: str,
+    mode: str = "BM25",
+    k: int = 5,
+    fetch_k: int = 20,
+    lambda_mult: float = 0.5,
+) -> RagStreamResponse:
+    prepared = prepare_answer_request(
+        config=config,
+        store=store,
+        bm25=bm25,
+        question=question,
+        mode=mode,
+        k=k,
+        fetch_k=fetch_k,
+        lambda_mult=lambda_mult,
+    )
+    chunks = (
+        [prepared.fallback_answer]
+        if prepared.fallback_answer is not None
+        else chat_stream(config, prepared.messages)
+    )
+    return RagStreamResponse(
+        chunks=chunks,
+        sources=prepared.sources,
+        mode=prepared.mode,
+        diagnostics=prepared.diagnostics,
     )

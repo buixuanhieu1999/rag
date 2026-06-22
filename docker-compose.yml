@@ -6,24 +6,6 @@ x-api-base: &api-base
     dockerfile: Dockerfile
   env_file:
     - .env
-  volumes:
-    - type: bind
-      source: ./docker-data/chroma
-      target: /app/.chroma
-      bind:
-        create_host_path: true
-    - type: bind
-      source: ./logs
-      target: /app/logs
-      bind:
-        create_host_path: true
-    - type: bind
-      source: ./exports
-      target: /app/exports
-      bind:
-        create_host_path: true
-  ports:
-    - "${RAG_API_PORT:-8000}:8000"
   restart: unless-stopped
   healthcheck:
     test:
@@ -38,16 +20,6 @@ x-api-base: &api-base
 
 x-ollama-base: &ollama-base
   image: ollama/ollama:latest
-  environment:
-    OLLAMA_HOST: 0.0.0.0:11434
-  volumes:
-    - type: bind
-      source: ./docker-data/ollama
-      target: /root/.ollama
-      bind:
-        create_host_path: true
-  ports:
-    - "${OLLAMA_PORT:-11434}:11434"
   restart: unless-stopped
   healthcheck:
     test: ["CMD-SHELL", "ollama list >/dev/null 2>&1"]
@@ -71,76 +43,193 @@ x-ollama-pull-base: &ollama-pull-base
       ollama pull "$${OLLAMA_MODEL}"
       ollama pull "$${RAG_EMBEDDING_MODEL}"
       ollama pull "$${RAG_ROUTER_MODEL}"
-      ollama pull "$${RAG_RERANKER_MODEL}"
   command: []
-  environment: &ollama-pull-env
-    OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3:4b-instruct}
-    RAG_EMBEDDING_MODEL: ${RAG_EMBEDDING_MODEL:-embeddinggemma:latest}
-    RAG_ROUTER_MODEL: ${RAG_ROUTER_MODEL:-qwen3:1.7b}
-    RAG_RERANKER_MODEL: ${RAG_RERANKER_MODEL:-qllama/bge-reranker-v2-m3:latest}
+
+x-ollama-pull-env: &ollama-pull-env
+  OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3:4b-instruct}
+  RAG_EMBEDDING_MODEL: ${RAG_EMBEDDING_MODEL:-embeddinggemma:latest}
+  RAG_ROUTER_MODEL: ${RAG_ROUTER_MODEL:-qwen3:1.7b}
 
 services:
-  api:
+  api-cpu:
     <<: *api-base
     profiles: ["cpu"]
     environment:
       RAG_CHROMA_DIR: /app/.chroma
-      OLLAMA_HOST: http://ollama:11434
-      RAG_LOCAL_OLLAMA_HOST: http://ollama:11434
+      OLLAMA_HOST: http://ollama-cpu:11434
+      RAG_LOCAL_OLLAMA_HOST: http://ollama-cpu:11434
+    volumes:
+      - type: bind
+        source: ./docker-data/cpu/chroma
+        target: /app/.chroma
+        bind:
+          create_host_path: true
+      - type: bind
+        source: ./logs
+        target: /app/logs
+        bind:
+          create_host_path: true
+      - type: bind
+        source: ./exports
+        target: /app/exports
+        bind:
+          create_host_path: true
+    ports:
+      - "${RAG_API_CPU_PORT:-8000}:8000"
     depends_on:
-      ollama:
+      ollama-cpu:
         condition: service_healthy
-      ollama-pull:
+      ollama-pull-cpu:
         condition: service_completed_successfully
 
-  ollama:
+  ollama-cpu:
     <<: *ollama-base
     profiles: ["cpu"]
+    environment:
+      OLLAMA_HOST: 0.0.0.0:11434
+    volumes:
+      - type: bind
+        source: ./docker-data/cpu/ollama
+        target: /root/.ollama
+        bind:
+          create_host_path: true
+    ports:
+      - "${OLLAMA_CPU_PORT:-11434}:11434"
 
-  ollama-pull:
+  ollama-pull-cpu:
     <<: *ollama-pull-base
     profiles: ["cpu"]
     environment:
       <<: *ollama-pull-env
-      OLLAMA_HOST: http://ollama:11434
+      OLLAMA_HOST: http://ollama-cpu:11434
     depends_on:
-      ollama:
+      ollama-cpu:
         condition: service_healthy
 
-  api-gpu:
+  api-gpu-0:
     <<: *api-base
-    profiles: ["gpu"]
+    profiles: ["gpu", "gpu0"]
     environment:
       RAG_CHROMA_DIR: /app/.chroma
-      OLLAMA_HOST: http://ollama-gpu:11434
-      RAG_LOCAL_OLLAMA_HOST: http://ollama-gpu:11434
+      OLLAMA_HOST: http://ollama-gpu-0:11434
+      RAG_LOCAL_OLLAMA_HOST: http://ollama-gpu-0:11434
+    volumes:
+      - type: bind
+        source: ./docker-data/gpu0/chroma
+        target: /app/.chroma
+        bind:
+          create_host_path: true
+      - type: bind
+        source: ./logs
+        target: /app/logs
+        bind:
+          create_host_path: true
+      - type: bind
+        source: ./exports
+        target: /app/exports
+        bind:
+          create_host_path: true
+    ports:
+      - "${RAG_API_GPU0_PORT:-8001}:8000"
     depends_on:
-      ollama-gpu:
+      ollama-gpu-0:
         condition: service_healthy
-      ollama-pull-gpu:
+      ollama-pull-gpu-0:
         condition: service_completed_successfully
 
-  ollama-gpu:
+  ollama-gpu-0:
     <<: *ollama-base
-    profiles: ["gpu"]
+    profiles: ["gpu", "gpu0"]
     environment:
       OLLAMA_HOST: 0.0.0.0:11434
-      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_VISIBLE_DEVICES: "0"
       NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    volumes:
+      - type: bind
+        source: ./docker-data/gpu0/ollama
+        target: /root/.ollama
+        bind:
+          create_host_path: true
+    ports:
+      - "${OLLAMA_GPU0_PORT:-11435}:11434"
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
-              count: all
+              device_ids: ["0"]
               capabilities: ["gpu"]
 
-  ollama-pull-gpu:
+  ollama-pull-gpu-0:
     <<: *ollama-pull-base
-    profiles: ["gpu"]
+    profiles: ["gpu", "gpu0"]
     environment:
       <<: *ollama-pull-env
-      OLLAMA_HOST: http://ollama-gpu:11434
+      OLLAMA_HOST: http://ollama-gpu-0:11434
     depends_on:
-      ollama-gpu:
+      ollama-gpu-0:
+        condition: service_healthy
+
+  api-gpu-1:
+    <<: *api-base
+    profiles: ["gpu", "gpu1"]
+    environment:
+      RAG_CHROMA_DIR: /app/.chroma
+      OLLAMA_HOST: http://ollama-gpu-1:11434
+      RAG_LOCAL_OLLAMA_HOST: http://ollama-gpu-1:11434
+    volumes:
+      - type: bind
+        source: ./docker-data/gpu1/chroma
+        target: /app/.chroma
+        bind:
+          create_host_path: true
+      - type: bind
+        source: ./logs
+        target: /app/logs
+        bind:
+          create_host_path: true
+      - type: bind
+        source: ./exports
+        target: /app/exports
+        bind:
+          create_host_path: true
+    ports:
+      - "${RAG_API_GPU1_PORT:-8002}:8000"
+    depends_on:
+      ollama-gpu-1:
+        condition: service_healthy
+      ollama-pull-gpu-1:
+        condition: service_completed_successfully
+
+  ollama-gpu-1:
+    <<: *ollama-base
+    profiles: ["gpu", "gpu1"]
+    environment:
+      OLLAMA_HOST: 0.0.0.0:11434
+      NVIDIA_VISIBLE_DEVICES: "1"
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    volumes:
+      - type: bind
+        source: ./docker-data/gpu1/ollama
+        target: /root/.ollama
+        bind:
+          create_host_path: true
+    ports:
+      - "${OLLAMA_GPU1_PORT:-11436}:11434"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["1"]
+              capabilities: ["gpu"]
+
+  ollama-pull-gpu-1:
+    <<: *ollama-pull-base
+    profiles: ["gpu", "gpu1"]
+    environment:
+      <<: *ollama-pull-env
+      OLLAMA_HOST: http://ollama-gpu-1:11434
+    depends_on:
+      ollama-gpu-1:
         condition: service_healthy

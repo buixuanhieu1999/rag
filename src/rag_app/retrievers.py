@@ -6,7 +6,6 @@ from dataclasses import replace
 from typing import Iterable
 
 import numpy as np
-from ollama import Client
 from rank_bm25 import BM25Okapi
 
 from .models import RetrievedDocument
@@ -47,86 +46,6 @@ def semantic_search(store: ChromaKnowledgeStore, query: str, k: int = 5) -> list
 
 def bm25_search(index: BM25Index, query: str, k: int = 5) -> list[RetrievedDocument]:
     return index.search(query, k=k)
-
-
-class OllamaEmbeddingReranker:
-    """Rerank candidates with a local Ollama reranker served via embed."""
-
-    def __init__(
-        self,
-        host: str = "http://localhost:11434",
-        model: str = "qllama/bge-reranker-v2-m3:latest",
-        batch_size: int = 16,
-        bm25_weight: float = 0.65,
-        keep_alive: str = "10s",
-    ) -> None:
-        self.host = host
-        self.model = model
-        self.batch_size = batch_size
-        self.bm25_weight = bm25_weight
-        self.keep_alive = keep_alive
-        self.client = Client(host=host)
-
-    def _embed(self, texts: list[str]) -> list[list[float]]:
-        embeddings: list[list[float]] = []
-        for start in range(0, len(texts), self.batch_size):
-            batch = texts[start : start + self.batch_size]
-            response = self.client.embed(
-                model=self.model,
-                input=batch,
-                keep_alive=self.keep_alive,
-            )
-            batch_embeddings = (
-                response["embeddings"]
-                if isinstance(response, dict)
-                else response.embeddings
-            )
-            embeddings.extend([list(embedding) for embedding in batch_embeddings])
-        return embeddings
-
-    def rerank(
-        self,
-        query: str,
-        documents: list[RetrievedDocument],
-        limit: int = 5,
-    ) -> list[RetrievedDocument]:
-        if not documents:
-            return []
-
-        embeddings = self._embed([query] + [doc.text for doc in documents])
-        expected = len(documents) + 1
-        if len(embeddings) != expected:
-            raise RuntimeError(
-                f"Ollama reranker returned {len(embeddings)} embeddings for {expected} inputs."
-            )
-
-        query_embedding = np.array(embeddings[0], dtype=np.float32)
-        bm25_scores = [float(doc.score or 0.0) for doc in documents]
-        max_bm25 = max(bm25_scores) if bm25_scores else 0.0
-        reranker_weight = 1.0 - self.bm25_weight
-        scored: list[RetrievedDocument] = []
-        for doc, embedding, bm25_score in zip(documents, embeddings[1:], bm25_scores):
-            reranker_score = _cosine(query_embedding, np.array(embedding, dtype=np.float32))
-            normalized_bm25 = bm25_score / max_bm25 if max_bm25 > 0 else 0.0
-            score = self.bm25_weight * normalized_bm25 + reranker_weight * reranker_score
-            metadata = dict(doc.metadata)
-            metadata["bm25_score"] = bm25_score
-            metadata["reranker_similarity"] = reranker_score
-            metadata["reranker_model"] = self.model
-            scored.append(replace(doc, score=score, metadata=metadata))
-
-        return sorted(scored, key=lambda doc: doc.score or 0.0, reverse=True)[:limit]
-
-
-def bm25_ollama_rerank_search(
-    index: BM25Index,
-    reranker: OllamaEmbeddingReranker,
-    query: str,
-    k: int = 5,
-    fetch_k: int = 20,
-) -> list[RetrievedDocument]:
-    candidates = bm25_search(index, query, k=max(fetch_k, k))
-    return reranker.rerank(query, candidates, limit=k)
 
 
 def reciprocal_rank_fusion(

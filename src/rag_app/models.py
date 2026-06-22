@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -28,6 +29,23 @@ class RetrievedDocument:
 @dataclass
 class RagResponse:
     answer: str
+    sources: list[RetrievedDocument]
+    mode: str
+    diagnostics: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class PreparedRagRequest:
+    messages: list[dict[str, str]]
+    sources: list[RetrievedDocument]
+    mode: str
+    diagnostics: dict[str, Any] = field(default_factory=dict)
+    fallback_answer: str | None = None
+
+
+@dataclass
+class RagStreamResponse:
+    chunks: Iterable[str]
     sources: list[RetrievedDocument]
     mode: str
     diagnostics: dict[str, Any] = field(default_factory=dict)
